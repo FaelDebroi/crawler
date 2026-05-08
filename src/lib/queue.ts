@@ -7,6 +7,7 @@ export type Job = {
   title: string;
   status: JobStatus;
   error?: string;
+  logs: string[];
   createdAt: number;
   startedAt?: number;
   finishedAt?: number;
@@ -49,7 +50,7 @@ const queue: ConcurrentQueue = g.__tiktokQueue ?? (g.__tiktokQueue = new Concurr
 const jobs: Map<string, Job> = g.__tiktokJobs ?? (g.__tiktokJobs = new Map());
 
 export function enqueue(id: string, title: string, task: () => Promise<void>): void {
-  const job: Job = { id, title, status: "queued", createdAt: Date.now() };
+  const job: Job = { id, title, status: "queued", logs: [], createdAt: Date.now() };
   jobs.set(id, job);
 
   queue.run(async () => {
@@ -65,6 +66,13 @@ export function enqueue(id: string, title: string, task: () => Promise<void>): v
       job.finishedAt = Date.now();
     }
   });
+}
+
+export function appendLog(id: string, message: string): void {
+  const job = jobs.get(id);
+  if (!job) return;
+  const t = new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+  job.logs.push(`[${t}] ${message}`);
 }
 
 export function getJob(id: string): Job | undefined {

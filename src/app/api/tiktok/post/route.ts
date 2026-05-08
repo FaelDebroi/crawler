@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import os from "os";
 import path from "path";
 import fs from "fs";
-import { enqueue } from "@/lib/queue";
+import { enqueue, appendLog } from "@/lib/queue";
 import { postToTikTok } from "@/lib/tiktok-poster";
 
 const TMP_DIR = path.join(os.tmpdir(), "tiktok-crawler");
@@ -15,6 +15,7 @@ export async function POST(request: NextRequest) {
     const title = (formData.get("title") as string) ?? "";
     const hashtags = JSON.parse((formData.get("hashtags") as string) ?? "[]") as string[];
     const scheduledDate = (formData.get("scheduledDate") as string) || undefined;
+    const headless = formData.get("showBrowser") !== "true";
 
     if (!file) {
       return NextResponse.json({ error: "No video file provided" }, { status: 400 });
@@ -37,7 +38,7 @@ export async function POST(request: NextRequest) {
 
     // Add to queue — runs concurrently up to 10, rest waits in FIFO order
     enqueue(jobId, title, () =>
-      postToTikTok({ filePath, title, hashtags, scheduledDate, email, password })
+      postToTikTok({ filePath, title, hashtags, scheduledDate, email, password, headless, log: (msg) => appendLog(jobId, msg) })
     );
 
     return NextResponse.json({ jobId });

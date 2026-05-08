@@ -17,6 +17,7 @@ type VideoItem = {
   postStatus: PostStatus;
   jobId?: string;
   postError?: string;
+  logs: string[];
 };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -36,6 +37,7 @@ function makeItem(file: File, globalTags: string[]): VideoItem {
     hashtags: [...globalTags],
     scheduledDate: "",
     postStatus: "idle",
+    logs: [],
   };
 }
 
@@ -115,6 +117,29 @@ function StatusBadge({ status, error }: { status: PostStatus; error?: string }) 
   );
 }
 
+// ─── LogPanel ────────────────────────────────────────────────────────────────
+
+function LogPanel({ logs }: { logs: string[] }) {
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (ref.current) ref.current.scrollTop = ref.current.scrollHeight;
+  }, [logs]);
+
+  if (!logs.length) return null;
+
+  return (
+    <div
+      ref={ref}
+      className="max-h-36 overflow-y-auto rounded-lg bg-zinc-950 px-3 py-2 font-mono text-[10px] leading-relaxed text-zinc-400 space-y-px"
+    >
+      {logs.map((line, i) => (
+        <div key={i} className="break-all">{line}</div>
+      ))}
+    </div>
+  );
+}
+
 // ─── VideoCard ────────────────────────────────────────────────────────────────
 
 function VideoCard({
@@ -177,7 +202,12 @@ function VideoCard({
 
       {/* Data de postagem */}
       <div>
-        <label className="mb-1 block text-xs font-medium text-zinc-500">Data de postagem</label>
+        <label className="mb-1 flex items-center justify-between text-xs font-medium text-zinc-500">
+          Data de postagem
+          {!item.scheduledDate && (
+            <span className="text-emerald-500 font-medium">Agora</span>
+          )}
+        </label>
         <input
           type="datetime-local"
           value={item.scheduledDate}
@@ -206,6 +236,9 @@ function VideoCard({
       {item.postStatus === "error" && item.postError && (
         <p className="rounded-lg bg-red-950/50 px-3 py-2 text-xs text-red-400">{item.postError}</p>
       )}
+
+      {/* Logs */}
+      <LogPanel logs={item.logs} />
     </div>
   );
 }
@@ -402,6 +435,7 @@ export default function TikTokImport() {
   const [videos, setVideos] = useState<VideoItem[]>([]);
   const [groups, setGroups] = useState<HashtagGroup[]>(DEFAULT_GROUPS);
   const [loading, setLoading] = useState(false);
+  const [showBrowser, setShowBrowser] = useState(false);
 
   const propagate = (oldGroups: HashtagGroup[], newGroups: HashtagGroup[]) => {
     const prev = effectiveTags(oldGroups);
@@ -468,7 +502,7 @@ export default function TikTokImport() {
     const item = videos.find((v) => v.id === id);
     if (!item) return;
 
-    updateVideo(id, { postStatus: "uploading", postError: undefined });
+    updateVideo(id, { postStatus: "uploading", postError: undefined, logs: [] });
 
     try {
       const fd = new FormData();
@@ -476,6 +510,7 @@ export default function TikTokImport() {
       fd.append("title", item.title);
       fd.append("hashtags", JSON.stringify(item.hashtags));
       if (item.scheduledDate) fd.append("scheduledDate", item.scheduledDate);
+      fd.append("showBrowser", showBrowser ? "true" : "false");
 
       const res = await fetch("/api/tiktok/post", { method: "POST", body: fd });
       const data = await res.json();
@@ -489,7 +524,13 @@ export default function TikTokImport() {
         postError: err instanceof Error ? err.message : "Erro desconhecido",
       });
     }
-  }, [videos]);
+  }, [videos, showBrowser]);
+
+  const handlePostAll = useCallback(() => {
+    videos
+      .filter((v) => v.postStatus === "idle" || v.postStatus === "error")
+      .forEach((v) => handlePost(v.id));
+  }, [videos, handlePost]);
 
   // Poll status for any in-flight jobs every 3 s
   useEffect(() => {
@@ -501,13 +542,15 @@ export default function TikTokImport() {
     const interval = setInterval(async () => {
       try {
         const res = await fetch("/api/tiktok/status");
-        const { jobs } = await res.json() as { jobs: Record<string, { status: PostStatus; error?: string }> };
+        const { jobs } = await res.json() as {
+          jobs: Record<string, { status: PostStatus; error?: string; logs: string[] }>;
+        };
         setVideos((prev) =>
           prev.map((v) => {
             if (!v.jobId) return v;
             const job = jobs[v.jobId];
             if (!job) return v;
-            return { ...v, postStatus: job.status, postError: job.error };
+            return { ...v, postStatus: job.status, postError: job.error, logs: job.logs ?? [] };
           })
         );
       } catch { /* ignore transient errors */ }
@@ -515,6 +558,10 @@ export default function TikTokImport() {
 
     return () => clearInterval(interval);
   }, [videos]);
+
+  const postableCount = videos.filter(
+    (v) => v.postStatus === "idle" || v.postStatus === "error"
+  ).length;
 
   return (
     <div className="flex flex-col gap-6">
@@ -529,6 +576,15 @@ export default function TikTokImport() {
         <GlobalHashtagPanel groups={groups} onGroupsChange={handleGroupsChange} />
       </div>
 
+      {/* Browser visibility toggle */}
+      <div className="flex items-center justify-between rounded-xl border border-zinc-800 bg-zinc-900 px-4 py-3">
+        <div>
+          <p className="text-sm font-medium text-zinc-200">Mostrar navegador</p>
+          <p className="text-xs text-zinc-500">Abre o Chromium visível — útil para acompanhar login e resolver CAPTCHAs</p>
+        </div>
+        <Toggle on={showBrowser} onChange={setShowBrowser} />
+      </div>
+
       {/* Drop zone */}
       <DropZone loading={loading} onFiles={handleFiles} />
 
@@ -540,16 +596,27 @@ export default function TikTokImport() {
               <span className="font-semibold text-white">{videos.length}</span>{" "}
               vídeo{videos.length !== 1 ? "s" : ""} importado{videos.length !== 1 ? "s" : ""}
             </p>
-            <button
-              type="button"
-              onClick={() => {
-                videos.forEach((v) => URL.revokeObjectURL(v.url));
-                setVideos([]);
-              }}
-              className="text-xs text-zinc-500 transition-colors hover:text-zinc-300"
-            >
-              Limpar todos
-            </button>
+            <div className="flex items-center gap-3">
+              {postableCount > 0 && (
+                <button
+                  type="button"
+                  onClick={handlePostAll}
+                  className="rounded-xl bg-white px-4 py-2 text-xs font-semibold text-black transition-opacity hover:opacity-90"
+                >
+                  Postar todos ({postableCount})
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => {
+                  videos.forEach((v) => URL.revokeObjectURL(v.url));
+                  setVideos([]);
+                }}
+                className="text-xs text-zinc-500 transition-colors hover:text-zinc-300"
+              >
+                Limpar todos
+              </button>
+            </div>
           </div>
           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
             {videos.map((item) => (

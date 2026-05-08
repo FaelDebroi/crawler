@@ -9,7 +9,11 @@
       "PowerShell($env:PATH = [System.Environment]::GetEnvironmentVariable\\(\"PATH\", \"Machine\"\\) + \";\" + [System.Environment]::GetEnvironmentVariable\\(\"PATH\", \"User\"\\); gh --version)",
       "PowerShell($env:PATH = [System.Environment]::GetEnvironmentVariable\\(\"PATH\", \"Machine\"\\) + \";\" + [System.Environment]::GetEnvironmentVariable\\(\"PATH\", \"User\"\\); gh auth status 2>&1)",
       "PowerShell($env:PATH = [System.Environment]::GetEnvironmentVariable\\(\"PATH\", \"Machine\"\\) + \";\" + [System.Environment]::GetEnvironmentVariable\\(\"PATH\", \"User\"\\); gh auth login --web -h github.com -p https 2>&1)",
-      "Bash(npm install *)"
+      "Bash(npm install *)",
+      "Bash(node -e \"const pe = require\\('puppeteer-extra'\\); const s = require\\('puppeteer-extra-plugin-stealth'\\); console.log\\('pe version:', require\\('./node_modules/puppeteer-extra/package.json'\\).version\\); console.log\\('stealth version:', require\\('./node_modules/puppeteer-extra-plugin-stealth/package.json'\\).version\\);\")",
+      "Bash(node -e \"try { const pe = require\\('puppeteer-extra'\\); const s = require\\('puppeteer-extra-plugin-stealth'\\); pe.use\\(s\\(\\)\\); console.log\\('OK'\\); } catch\\(e\\) { console.error\\(e.message\\); }\")",
+      "Bash(node -e \"const fs=require\\('fs'\\),p=require\\('path'\\),ud=p.join\\(process.env.LOCALAPPDATA,'Google','Chrome','User Data'\\);fs.readdirSync\\(ud\\).forEach\\(e=>{try{const pr=JSON.parse\\(fs.readFileSync\\(p.join\\(ud,e,'Preferences'\\),'utf8'\\)\\);if\\(pr?.profile?.name\\)console.log\\(e,'→',pr.profile.name\\)}catch{}}\\)\")",
+      "Bash(node -e \"const fs=require\\('fs'\\),p=require\\('path'\\),ud=p.join\\(process.env.LOCALAPPDATA,'Google','Chrome','User Data'\\),state=JSON.parse\\(fs.readFileSync\\(p.join\\(ud,'Local State'\\),'utf8'\\)\\);console.log\\('last_used:',state?.profile?.last_used\\)\")"
     ]
   }
 }
