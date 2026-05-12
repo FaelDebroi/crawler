@@ -60,6 +60,7 @@ type Platform = {
   id: string;
   name: string;
   locked: boolean;
+  discontinued?: boolean;
   href?: string;
   Icon: React.ComponentType<{ className?: string }>;
   iconColor: string;
@@ -79,9 +80,10 @@ const platforms: Platform[] = [
   {
     id: "kwai",
     name: "Kwai",
-    locked: true,
+    locked: false,
+    href: "/kwai",
     Icon: KwaiIcon,
-    iconColor: "text-zinc-500",
+    iconColor: "text-orange-400",
     accentColor: "#FF6900",
   },
   {
@@ -145,7 +147,7 @@ function ActiveCard({ platform }: { platform: Platform }) {
 }
 
 function LockedCard({ platform }: { platform: Platform }) {
-  const { Icon, name } = platform;
+  const { Icon, name, discontinued } = platform;
   return (
     <div className="relative flex flex-col items-center justify-center gap-4 rounded-2xl border border-zinc-800 bg-zinc-900/50 p-8 cursor-not-allowed select-none">
       <div className="absolute right-3 top-3 text-zinc-600">
@@ -154,9 +156,15 @@ function LockedCard({ platform }: { platform: Platform }) {
       <Icon className={`h-14 w-14 ${platform.iconColor} opacity-40`} />
       <div className="flex flex-col items-center gap-1">
         <span className="text-base font-semibold text-zinc-500">{name}</span>
-        <span className="rounded-full bg-zinc-800 px-2.5 py-0.5 text-xs font-medium text-zinc-600">
-          Em breve
-        </span>
+        {discontinued ? (
+          <span className="rounded-full bg-red-950 px-2.5 py-0.5 text-xs font-medium text-red-500">
+            Plataforma encerrada
+          </span>
+        ) : (
+          <span className="rounded-full bg-zinc-800 px-2.5 py-0.5 text-xs font-medium text-zinc-600">
+            Em breve
+          </span>
+        )}
       </div>
     </div>
   );

@@ -12,10 +12,8 @@ type VideoItem = {
   file: File;
   url: string;
   title: string;
-  description: string;
   comment: string;
   hashtags: string[];
-  scheduledDate: string;
   postStatus: PostStatus;
   jobId?: string;
   postError?: string;
@@ -36,10 +34,8 @@ function makeItem(file: File, globalTags: string[], comment = ""): VideoItem {
     file,
     url: URL.createObjectURL(file),
     title: file.name.replace(/\.[^.]+$/, ""),
-    description: "",
     comment,
     hashtags: [...globalTags],
-    scheduledDate: "",
     postStatus: "idle",
     logs: [],
   };
@@ -67,18 +63,9 @@ function HashtagInput({
   return (
     <div className="flex flex-wrap gap-1.5 rounded-xl border border-zinc-700 bg-zinc-800 px-3 py-2 focus-within:border-zinc-500 transition-colors">
       {tags.map((tag) => (
-        <span
-          key={tag}
-          className="flex items-center gap-1 rounded-lg bg-zinc-700 px-2 py-0.5 text-xs text-zinc-200"
-        >
+        <span key={tag} className="flex items-center gap-1 rounded-lg bg-zinc-700 px-2 py-0.5 text-xs text-zinc-200">
           #{tag}
-          <button
-            type="button"
-            onClick={() => onChange(tags.filter((t) => t !== tag))}
-            className="leading-none text-zinc-400 hover:text-white transition-colors"
-          >
-            ×
-          </button>
+          <button type="button" onClick={() => onChange(tags.filter((t) => t !== tag))} className="leading-none text-zinc-400 hover:text-white transition-colors">×</button>
         </span>
       ))}
       <input
@@ -86,12 +73,8 @@ function HashtagInput({
         value={draft}
         onChange={(e) => setDraft(e.target.value)}
         onKeyDown={(e) => {
-          if (e.key === "Enter" || e.key === ",") {
-            e.preventDefault();
-            commit(draft);
-          } else if (e.key === "Backspace" && !draft && tags.length) {
-            onChange(tags.slice(0, -1));
-          }
+          if (e.key === "Enter" || e.key === ",") { e.preventDefault(); commit(draft); }
+          else if (e.key === "Backspace" && !draft && tags.length) onChange(tags.slice(0, -1));
         }}
         onBlur={() => draft && commit(draft)}
         placeholder={tags.length === 0 ? placeholder : ""}
@@ -107,7 +90,7 @@ const STATUS_CONFIG: Record<PostStatus, { label: string; className: string }> = 
   idle:      { label: "Aguardando",  className: "bg-zinc-700 text-zinc-300" },
   uploading: { label: "Enviando…",   className: "bg-blue-900/60 text-blue-300" },
   queued:    { label: "Na fila",     className: "bg-yellow-900/60 text-yellow-300" },
-  running:   { label: "Postando…",   className: "bg-indigo-900/60 text-indigo-300 animate-pulse" },
+  running:   { label: "Postando…",   className: "bg-orange-900/60 text-orange-300 animate-pulse" },
   done:      { label: "Postado ✓",   className: "bg-emerald-900/60 text-emerald-300" },
   error:     { label: "Erro",        className: "bg-red-900/60 text-red-300" },
 };
@@ -125,22 +108,23 @@ function StatusBadge({ status, error }: { status: PostStatus; error?: string }) 
 
 function LogPanel({ logs }: { logs: string[] }) {
   const ref = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (ref.current) ref.current.scrollTop = ref.current.scrollHeight;
-  }, [logs]);
-
+  useEffect(() => { if (ref.current) ref.current.scrollTop = ref.current.scrollHeight; }, [logs]);
   if (!logs.length) return null;
-
   return (
-    <div
-      ref={ref}
-      className="max-h-36 overflow-y-auto rounded-lg bg-zinc-950 px-3 py-2 font-mono text-[10px] leading-relaxed text-zinc-400 space-y-px"
-    >
-      {logs.map((line, i) => (
-        <div key={i} className="break-all">{line}</div>
-      ))}
+    <div ref={ref} className="max-h-36 overflow-y-auto rounded-lg bg-zinc-950 px-3 py-2 font-mono text-[10px] leading-relaxed text-zinc-400 space-y-px">
+      {logs.map((line, i) => <div key={i} className="break-all">{line}</div>)}
     </div>
+  );
+}
+
+// ─── Toggle ───────────────────────────────────────────────────────────────────
+
+function Toggle({ on, onChange }: { on: boolean; onChange: (v: boolean) => void }) {
+  return (
+    <button type="button" role="switch" aria-checked={on} onClick={() => onChange(!on)}
+      className={`relative h-5 w-9 shrink-0 rounded-full transition-colors duration-200 ${on ? "bg-orange-500" : "bg-zinc-600"}`}>
+      <span className={`absolute top-0.5 left-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform duration-200 ${on ? "translate-x-4" : "translate-x-0"}`} />
+    </button>
   );
 }
 
@@ -164,19 +148,10 @@ function VideoCard({
     <div className="flex flex-col gap-3 rounded-2xl border border-zinc-800 bg-zinc-900 p-4">
       {/* Mini player */}
       <div className="relative overflow-hidden rounded-xl bg-black">
-        <video
-          src={item.url}
-          controls
-          preload="metadata"
-          className="h-44 w-full object-contain"
-        />
+        <video src={item.url} controls preload="metadata" className="h-44 w-full object-contain" />
         {!busy && !terminal && (
-          <button
-            type="button"
-            onClick={() => onRemove(item.id)}
-            title="Remover"
-            className="absolute right-2 top-2 flex h-6 w-6 items-center justify-center rounded-full bg-black/70 text-sm leading-none text-white hover:bg-black transition-colors"
-          >
+          <button type="button" onClick={() => onRemove(item.id)} title="Remover"
+            className="absolute right-2 top-2 flex h-6 w-6 items-center justify-center rounded-full bg-black/70 text-sm leading-none text-white hover:bg-black transition-colors">
             ×
           </button>
         )}
@@ -184,90 +159,43 @@ function VideoCard({
 
       {/* Título */}
       <div>
-        <label className="mb-1 block text-xs font-medium text-zinc-500">Título</label>
-        <input
-          type="text"
-          value={item.title}
-          disabled={busy || terminal}
+        <label className="mb-1 block text-xs font-medium text-zinc-500">Nome do post</label>
+        <input type="text" value={item.title} disabled={busy || terminal}
           onChange={(e) => onChange(item.id, { title: e.target.value })}
-          className="w-full rounded-xl border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-white outline-none focus:border-zinc-500 transition-colors disabled:opacity-50"
-        />
-      </div>
-
-      {/* Descrição */}
-      <div>
-        <label className="mb-1 block text-xs font-medium text-zinc-500">Descrição</label>
-        <textarea
-          value={item.description}
-          disabled={busy || terminal}
-          onChange={(e) => onChange(item.id, { description: e.target.value })}
-          rows={3}
-          placeholder="Texto que aparece como legenda no TikTok…"
-          className="w-full resize-none rounded-xl border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-white placeholder-zinc-500 outline-none focus:border-zinc-500 transition-colors disabled:opacity-50"
-        />
+          className="w-full rounded-xl border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-white outline-none focus:border-zinc-500 transition-colors disabled:opacity-50" />
       </div>
 
       {/* Comentário */}
       <div>
         <label className="mb-1 block text-xs font-medium text-zinc-500">Comentário</label>
-        <textarea
-          value={item.comment}
-          disabled={busy || terminal}
+        <textarea value={item.comment} disabled={busy || terminal}
           onChange={(e) => onChange(item.id, { comment: e.target.value })}
-          rows={3}
-          placeholder="Escreva o comentário da publicação…"
-          className="w-full resize-none rounded-xl border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-white placeholder-zinc-500 outline-none focus:border-zinc-500 transition-colors disabled:opacity-50"
-        />
+          rows={2}
+          placeholder="Comentário que aparecerá na publicação…"
+          className="w-full resize-none rounded-xl border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-white placeholder-zinc-500 outline-none focus:border-zinc-500 transition-colors disabled:opacity-50" />
       </div>
 
       {/* Hashtags */}
       <div>
         <label className="mb-1 block text-xs font-medium text-zinc-500">Hashtags</label>
-        <HashtagInput
-          tags={item.hashtags}
-          onChange={(hashtags) => onChange(item.id, { hashtags })}
-          placeholder="Adicionar hashtag"
-        />
+        <HashtagInput tags={item.hashtags} onChange={(hashtags) => onChange(item.id, { hashtags })} placeholder="Adicionar hashtag" />
       </div>
 
-      {/* Data de postagem */}
-      <div>
-        <label className="mb-1 flex items-center justify-between text-xs font-medium text-zinc-500">
-          Data de postagem
-          {!item.scheduledDate && (
-            <span className="text-emerald-500 font-medium">Agora</span>
-          )}
-        </label>
-        <input
-          type="datetime-local"
-          value={item.scheduledDate}
-          disabled={busy || terminal}
-          onChange={(e) => onChange(item.id, { scheduledDate: e.target.value })}
-          className="w-full rounded-xl border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-white outline-none focus:border-zinc-500 transition-colors disabled:opacity-50 [color-scheme:dark]"
-        />
-      </div>
-
-      {/* Footer: status + post button */}
+      {/* Footer */}
       <div className="flex items-center justify-between pt-1">
         <StatusBadge status={item.postStatus} error={item.postError} />
         {!terminal && (
-          <button
-            type="button"
-            disabled={busy}
-            onClick={() => onPost(item.id)}
-            className="rounded-xl bg-white px-4 py-2 text-xs font-semibold text-black transition-opacity hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed"
-          >
+          <button type="button" disabled={busy} onClick={() => onPost(item.id)}
+            className="rounded-xl bg-orange-500 px-4 py-2 text-xs font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed">
             {item.postStatus === "error" ? "Tentar novamente" : "Postar"}
           </button>
         )}
       </div>
 
-      {/* Error detail */}
       {item.postStatus === "error" && item.postError && (
         <p className="rounded-lg bg-red-950/50 px-3 py-2 text-xs text-red-400">{item.postError}</p>
       )}
 
-      {/* Logs */}
       <LogPanel logs={item.logs} />
     </div>
   );
@@ -275,31 +203,18 @@ function VideoCard({
 
 // ─── DropZone ─────────────────────────────────────────────────────────────────
 
-function DropZone({
-  loading,
-  onFiles,
-}: {
-  loading: boolean;
-  onFiles: (files: File[]) => void;
-}) {
+function DropZone({ loading, onFiles }: { loading: boolean; onFiles: (files: File[]) => void }) {
   const [dragging, setDragging] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
   return (
     <div
-      onDrop={(e) => {
-        e.preventDefault();
-        setDragging(false);
-        onFiles(Array.from(e.dataTransfer.files));
-      }}
+      onDrop={(e) => { e.preventDefault(); setDragging(false); onFiles(Array.from(e.dataTransfer.files)); }}
       onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
       onDragLeave={() => setDragging(false)}
       onClick={() => inputRef.current?.click()}
       className={`flex cursor-pointer flex-col items-center justify-center gap-3 rounded-2xl border-2 border-dashed px-8 py-12 transition-colors
-        ${dragging
-          ? "border-zinc-400 bg-zinc-800/60"
-          : "border-zinc-700 bg-zinc-900/40 hover:border-zinc-600 hover:bg-zinc-900"
-        }`}
+        ${dragging ? "border-orange-500 bg-orange-900/10" : "border-zinc-700 bg-zinc-900/40 hover:border-zinc-600 hover:bg-zinc-900"}`}
     >
       <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-zinc-800">
         {loading ? (
@@ -314,39 +229,23 @@ function DropZone({
         )}
       </div>
       <div className="text-center">
-        <p className="text-sm font-medium text-zinc-300">
-          {loading ? "Extraindo arquivos..." : "Arraste vídeos ou uma pasta ZIP"}
-        </p>
+        <p className="text-sm font-medium text-zinc-300">{loading ? "Extraindo arquivos..." : "Arraste vídeos ou uma pasta ZIP"}</p>
         <p className="mt-0.5 text-xs text-zinc-500">MP4, MOV, AVI, WEBM, MKV · ou .zip com vídeos</p>
       </div>
       {!loading && (
-        <button
-          type="button"
-          className="rounded-lg bg-zinc-700 px-4 py-2 text-xs font-medium text-white transition-colors hover:bg-zinc-600"
-        >
+        <button type="button" className="rounded-lg bg-zinc-700 px-4 py-2 text-xs font-medium text-white transition-colors hover:bg-zinc-600">
           Selecionar arquivos
         </button>
       )}
-      <input
-        ref={inputRef}
-        type="file"
-        accept="video/*,.zip"
-        multiple
-        className="hidden"
-        onChange={(e) => {
-          if (e.target.files?.length) {
-            onFiles(Array.from(e.target.files));
-            e.target.value = "";
-          }
-        }}
-      />
+      <input ref={inputRef} type="file" accept="video/*,.zip" multiple className="hidden"
+        onChange={(e) => { if (e.target.files?.length) { onFiles(Array.from(e.target.files)); e.target.value = ""; } }} />
     </div>
   );
 }
 
-// ─── HashtagGroup types & helpers ────────────────────────────────────────────
+// ─── Hashtag groups ───────────────────────────────────────────────────────────
 
-type GroupId = "important" | "viral" | "custom";
+type GroupId = "principais" | "virais" | "custom";
 
 type HashtagGroup = {
   id: GroupId;
@@ -358,16 +257,16 @@ type HashtagGroup = {
 
 const DEFAULT_GROUPS: HashtagGroup[] = [
   {
-    id: "important",
+    id: "principais",
     label: "Principais",
-    tags: ["fyp", "foryou", "foryoupage", "fy", "fypシ", "parati", "fup", "foryourpage", "viral", "tiktok"],
+    tags: ["kwai", "kwaistar", "kwaibrasil", "kwaiapp", "fyp", "foryou", "parati", "viral", "foryoupage", "fy"],
     enabled: true,
     toggleable: true,
   },
   {
-    id: "viral",
+    id: "virais",
     label: "Virais",
-    tags: ["trending", "tiktokviral", "viralvideo", "explorepage", "trendingnow", "trendingvideo", "viralpost", "viraltiktok", "tiktoktrend", "explore"],
+    tags: ["trending", "viralvideo", "explorepage", "trendingnow", "viralpost", "kwaitrend", "explore", "trendingvideo", "viraltiktok", "kwaimusica"],
     enabled: true,
     toggleable: true,
   },
@@ -384,26 +283,6 @@ function effectiveTags(groups: HashtagGroup[]): string[] {
   return [...new Set(groups.filter((g) => g.enabled).flatMap((g) => g.tags))];
 }
 
-// ─── Toggle ───────────────────────────────────────────────────────────────────
-
-function Toggle({ on, onChange }: { on: boolean; onChange: (v: boolean) => void }) {
-  return (
-    <button
-      type="button"
-      role="switch"
-      aria-checked={on}
-      onClick={() => onChange(!on)}
-      className={`relative h-5 w-9 shrink-0 rounded-full transition-colors duration-200 ${on ? "bg-emerald-500" : "bg-zinc-600"}`}
-    >
-      <span
-        className={`absolute top-0.5 left-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform duration-200 ${on ? "translate-x-4" : "translate-x-0"}`}
-      />
-    </button>
-  );
-}
-
-// ─── GlobalHashtagPanel ───────────────────────────────────────────────────────
-
 function GlobalHashtagPanel({
   groups,
   onGroupsChange,
@@ -411,13 +290,11 @@ function GlobalHashtagPanel({
   groups: HashtagGroup[];
   onGroupsChange: (next: HashtagGroup[]) => void;
 }) {
-  const toggle = (id: GroupId) => {
+  const toggle = (id: GroupId) =>
     onGroupsChange(groups.map((g) => (g.id === id ? { ...g, enabled: !g.enabled } : g)));
-  };
 
-  const setTags = (id: GroupId, tags: string[]) => {
+  const setTags = (id: GroupId, tags: string[]) =>
     onGroupsChange(groups.map((g) => (g.id === id ? { ...g, tags } : g)));
-  };
 
   return (
     <div className="grid gap-4 sm:grid-cols-3">
@@ -430,9 +307,7 @@ function GlobalHashtagPanel({
         >
           <div className="flex items-center justify-between">
             <span className="text-sm font-medium text-zinc-200">{group.label}</span>
-            {group.toggleable && (
-              <Toggle on={group.enabled} onChange={() => toggle(group.id)} />
-            )}
+            {group.toggleable && <Toggle on={group.enabled} onChange={() => toggle(group.id)} />}
           </div>
 
           {group.id === "custom" ? (
@@ -444,10 +319,7 @@ function GlobalHashtagPanel({
           ) : (
             <div className="flex flex-wrap gap-1.5">
               {group.tags.map((tag) => (
-                <span
-                  key={tag}
-                  className="rounded-lg bg-zinc-800 px-2 py-0.5 text-xs text-zinc-400"
-                >
+                <span key={tag} className="rounded-lg bg-zinc-800 px-2 py-0.5 text-xs text-zinc-400">
                   #{tag}
                 </span>
               ))}
@@ -461,12 +333,13 @@ function GlobalHashtagPanel({
 
 // ─── Main export ──────────────────────────────────────────────────────────────
 
-export default function TikTokImport() {
+export default function KwaiImport() {
   const [videos, setVideos] = useState<VideoItem[]>([]);
   const [groups, setGroups] = useState<HashtagGroup[]>(DEFAULT_GROUPS);
   const [globalComment, setGlobalComment] = useState("");
   const [loading, setLoading] = useState(false);
-  const [showBrowser, setShowBrowser] = useState(false);
+  const [adbStatus, setAdbStatus] = useState<"checking" | "connected" | "disconnected">("checking");
+  const [adbDevices, setAdbDevices] = useState<string[]>([]);
 
   const propagate = (oldGroups: HashtagGroup[], newGroups: HashtagGroup[]) => {
     const prev = effectiveTags(oldGroups);
@@ -539,17 +412,12 @@ export default function TikTokImport() {
       const fd = new FormData();
       fd.append("video", item.file, item.file.name);
       fd.append("title", item.title);
-      fd.append("description", item.description);
       fd.append("comment", item.comment);
       fd.append("hashtags", JSON.stringify(item.hashtags));
-      if (item.scheduledDate) fd.append("scheduledDate", item.scheduledDate);
-      fd.append("showBrowser", showBrowser ? "true" : "false");
-
-      const res = await fetch("/api/tiktok/post", { method: "POST", body: fd });
+      const res = await fetch("/api/kwai/post", { method: "POST", body: fd });
       const data = await res.json();
 
       if (!res.ok) throw new Error(data.error ?? "Upload failed");
-
       updateVideo(id, { postStatus: "queued", jobId: data.jobId });
     } catch (err) {
       updateVideo(id, {
@@ -557,24 +425,20 @@ export default function TikTokImport() {
         postError: err instanceof Error ? err.message : "Erro desconhecido",
       });
     }
-  }, [videos, showBrowser]);
+  }, [videos]);
 
   const handlePostAll = useCallback(() => {
-    videos
-      .filter((v) => v.postStatus === "idle" || v.postStatus === "error")
-      .forEach((v) => handlePost(v.id));
+    videos.filter((v) => v.postStatus === "idle" || v.postStatus === "error").forEach((v) => handlePost(v.id));
   }, [videos, handlePost]);
 
-  // Poll status for any in-flight jobs every 3 s
+  // Poll job status every 3s
   useEffect(() => {
-    const inFlight = videos.filter(
-      (v) => v.jobId && v.postStatus !== "done" && v.postStatus !== "error"
-    );
+    const inFlight = videos.filter((v) => v.jobId && v.postStatus !== "done" && v.postStatus !== "error");
     if (!inFlight.length) return;
 
     const interval = setInterval(async () => {
       try {
-        const res = await fetch("/api/tiktok/status");
+        const res = await fetch("/api/kwai/status");
         const { jobs } = await res.json() as {
           jobs: Record<string, { status: PostStatus; error?: string; logs: string[] }>;
         };
@@ -586,18 +450,70 @@ export default function TikTokImport() {
             return { ...v, postStatus: job.status, postError: job.error, logs: job.logs ?? [] };
           })
         );
-      } catch { /* ignore transient errors */ }
+      } catch { /* ignore */ }
     }, 3_000);
 
     return () => clearInterval(interval);
   }, [videos]);
 
-  const postableCount = videos.filter(
-    (v) => v.postStatus === "idle" || v.postStatus === "error"
-  ).length;
+  const postableCount = videos.filter((v) => v.postStatus === "idle" || v.postStatus === "error").length;
+
+  const checkAdb = async () => {
+    setAdbStatus("checking");
+    try {
+      const res = await fetch("/api/kwai/login");
+      const data = await res.json() as { connected: boolean; devices: string[]; error?: string };
+      setAdbStatus(data.connected ? "connected" : "disconnected");
+      setAdbDevices(data.devices ?? []);
+    } catch {
+      setAdbStatus("disconnected");
+    }
+  };
+
+  useEffect(() => { checkAdb(); }, []);
 
   return (
     <div className="flex flex-col gap-6">
+
+      {/* ADB status card */}
+      <div className={`rounded-2xl border p-4 transition-colors ${
+        adbStatus === "connected" ? "border-emerald-700 bg-emerald-950/20" :
+        adbStatus === "disconnected" ? "border-amber-700 bg-amber-950/20" :
+        "border-zinc-700 bg-zinc-900"
+      }`}>
+        <div className="flex items-start justify-between gap-4">
+          <div className="flex-1">
+            <div className="flex items-center gap-2">
+              <span className={`h-2 w-2 rounded-full ${
+                adbStatus === "connected" ? "bg-emerald-400" :
+                adbStatus === "disconnected" ? "bg-amber-400 animate-pulse" :
+                "bg-zinc-500 animate-pulse"
+              }`} />
+              <p className="text-sm font-medium text-zinc-200">
+                {adbStatus === "connected" ? `Emulador conectado (${adbDevices.join(", ")})` :
+                 adbStatus === "disconnected" ? "Emulador não detectado" :
+                 "Verificando ADB..."}
+              </p>
+            </div>
+            {adbStatus === "disconnected" && (
+              <div className="mt-2 space-y-1 text-xs text-zinc-400">
+                <p>1. Abra o <strong className="text-zinc-200">BlueStacks</strong> ou <strong className="text-zinc-200">LDPlayer</strong></p>
+                <p>2. Habilite ADB nas configurações do emulador</p>
+                <p>3. Instale o app <strong className="text-zinc-200">Kwai</strong> e faça login manualmente uma vez</p>
+                <p>4. No terminal: <code className="rounded bg-zinc-800 px-1">adb connect 127.0.0.1:5555</code></p>
+              </div>
+            )}
+          </div>
+          <button
+            type="button"
+            onClick={checkAdb}
+            className="shrink-0 rounded-xl border border-zinc-700 px-3 py-1.5 text-xs text-zinc-400 hover:text-white hover:border-zinc-500 transition-colors"
+          >
+            Verificar
+          </button>
+        </div>
+      </div>
+
       {/* Hashtag groups */}
       <div>
         <div className="mb-3 flex items-center justify-between">
@@ -609,32 +525,22 @@ export default function TikTokImport() {
         <GlobalHashtagPanel groups={groups} onGroupsChange={handleGroupsChange} />
       </div>
 
-      {/* Browser visibility toggle */}
-      <div className="flex items-center justify-between rounded-xl border border-zinc-800 bg-zinc-900 px-4 py-3">
-        <div>
-          <p className="text-sm font-medium text-zinc-200">Mostrar navegador</p>
-          <p className="text-xs text-zinc-500">Abre o Chromium visível — útil para acompanhar login e resolver CAPTCHAs</p>
-        </div>
-        <Toggle on={showBrowser} onChange={setShowBrowser} />
-      </div>
-
       {/* Comentário global */}
       <div className="rounded-2xl border border-zinc-800 bg-zinc-900 p-4">
         <label className="mb-2 block text-sm font-medium text-zinc-200">
           Comentário global
-          <span className="ml-2 text-xs font-normal text-zinc-500">
-            pré-preenchido em todos os vídeos importados
-          </span>
+          <span className="ml-2 text-xs font-normal text-zinc-500">aplicado em todos os vídeos importados</span>
         </label>
         <textarea
           value={globalComment}
           onChange={(e) => setGlobalComment(e.target.value)}
           rows={3}
-          placeholder="Escreva o comentário que será postado automaticamente após cada publicação…"
+          placeholder="Comentário que será postado automaticamente após cada publicação…"
           className="w-full resize-none rounded-xl border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-white placeholder-zinc-500 outline-none focus:border-zinc-500 transition-colors"
         />
       </div>
 
+      {/* Mostrar navegador */}
       {/* Drop zone */}
       <DropZone loading={loading} onFiles={handleFiles} />
 
@@ -648,35 +554,21 @@ export default function TikTokImport() {
             </p>
             <div className="flex items-center gap-3">
               {postableCount > 0 && (
-                <button
-                  type="button"
-                  onClick={handlePostAll}
-                  className="rounded-xl bg-white px-4 py-2 text-xs font-semibold text-black transition-opacity hover:opacity-90"
-                >
+                <button type="button" onClick={handlePostAll}
+                  className="rounded-xl bg-orange-500 px-4 py-2 text-xs font-semibold text-white transition-opacity hover:opacity-90">
                   Postar todos ({postableCount})
                 </button>
               )}
-              <button
-                type="button"
-                onClick={() => {
-                  videos.forEach((v) => URL.revokeObjectURL(v.url));
-                  setVideos([]);
-                }}
-                className="text-xs text-zinc-500 transition-colors hover:text-zinc-300"
-              >
+              <button type="button"
+                onClick={() => { videos.forEach((v) => URL.revokeObjectURL(v.url)); setVideos([]); }}
+                className="text-xs text-zinc-500 transition-colors hover:text-zinc-300">
                 Limpar todos
               </button>
             </div>
           </div>
           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
             {videos.map((item) => (
-              <VideoCard
-                key={item.id}
-                item={item}
-                onChange={updateVideo}
-                onRemove={removeVideo}
-                onPost={handlePost}
-              />
+              <VideoCard key={item.id} item={item} onChange={updateVideo} onRemove={removeVideo} onPost={handlePost} />
             ))}
           </div>
         </div>

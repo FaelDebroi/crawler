@@ -1,15 +1,26 @@
 import puppeteerExtra from "puppeteer-extra";
 import StealthPlugin from "puppeteer-extra-plugin-stealth";
-import type { Page, Frame } from "puppeteer";
+import type { Page, Frame, ElementHandle } from "puppeteer";
 import path from "path";
 import fs from "fs";
+import os from "os";
 
 puppeteerExtra.use(StealthPlugin());
 
 const COOKIES_PATH = path.join(process.cwd(), ".tiktok-session.json");
+const SCREENSHOTS_DIR = path.join(process.cwd(), "screenshots");
 const UPLOAD_URL = "https://www.tiktok.com/creator-center/upload";
-const LOGIN_URL = "https://www.tiktok.com/login/phone-or-email/email";
+const QR_LOGIN_URL = "https://www.tiktok.com/login/qrcode";
 const CHROME_DEBUG_PORT = parseInt(process.env.CHROME_DEBUG_PORT ?? "9222", 10);
+
+async function screenshot(page: Page, label: string, log: (m: string) => void): Promise<void> {
+  try {
+    if (!fs.existsSync(SCREENSHOTS_DIR)) fs.mkdirSync(SCREENSHOTS_DIR, { recursive: true });
+    const file = path.join(SCREENSHOTS_DIR, `${Date.now()}-${label}.png`);
+    await page.screenshot({ path: file, fullPage: true });
+    log(`📸 Screenshot: ${file}`);
+  } catch { /* não bloqueia o fluxo */ }
+}
 
 // Persists across hot-reloads
 const g = globalThis as typeof globalThis & {
@@ -20,10 +31,10 @@ const g = globalThis as typeof globalThis & {
 export type PostParams = {
   filePath: string;
   title: string;
+  description?: string;
+  comment?: string;
   hashtags: string[];
   scheduledDate?: string; // datetime-local format: "YYYY-MM-DDTHH:mm"
-  email: string;
-  password: string;
   headless?: boolean;
   log?: (msg: string) => void;
 };
@@ -33,9 +44,9 @@ export async function postToTikTok(params: PostParams): Promise<void> {
   const uploadHeadless = params.headless ?? (process.env.PUPPETEER_HEADLESS !== "false");
 
   // Phase 1: guarantee a valid session.
-  // Login browser is ALWAYS visible so the user can handle CAPTCHAs / 2FA.
+  // Login browser is ALWAYS visible so the user can scan the QR code.
   // Only one job runs this at a time; the rest wait and reuse the saved cookies.
-  await ensureValidSession(params.email, params.password, log);
+  await ensureValidSession(log);
 
   // Phase 2: upload — connects to the running Chrome tab or launches a new one.
   log("Conectando ao Chrome para upload...");
@@ -55,6 +66,8 @@ export async function postToTikTok(params: PostParams): Promise<void> {
       throw new Error("Sessão inválida após login. Tente novamente.");
     }
 
+    await screenshot(page, "01-upload-page", log);
+
     log("Aguardando iframe de upload...");
     const frame = await getUploadFrame(page);
     await humanDelay(800, 1_800);
@@ -66,12 +79,20 @@ export async function postToTikTok(params: PostParams): Promise<void> {
     log("Aguardando processamento do vídeo...");
     await waitForProcessing(frame);
     log("Vídeo processado com sucesso.");
+    await dismissPopups(page, log);
+    await screenshot(page, "02-after-processing", log);
     await humanDelay(1_200, 2_500);
 
     log("Preenchendo legenda...");
-    await fillCaption(frame, buildCaption(params.title, params.hashtags));
+    await fillCaption(frame, buildCaption(params.description ?? params.title, params.hashtags));
     log("Legenda preenchida.");
     await humanDelay(800, 1_600);
+
+    if (params.comment?.trim()) {
+      log("Preenchendo primeiro comentário...");
+      await fillFirstComment(frame, params.comment.trim(), log);
+      await humanDelay(600, 1_200);
+    }
 
     if (params.scheduledDate) {
       log(`Configurando agendamento para ${params.scheduledDate}...`);
@@ -82,9 +103,10 @@ export async function postToTikTok(params: PostParams): Promise<void> {
       log("Sem data de agendamento — publicará imediatamente.");
     }
 
+    await screenshot(page, "03-before-submit", log);
     log("Clicando em Publicar...");
     await humanDelay(600, 1_200);
-    await submitPost(frame);
+    await submitPost(frame, page, log);
     log("Publicado com sucesso!");
 
     await persistCookies(page);
@@ -100,33 +122,25 @@ function onLoginPage(page: Page): boolean {
   return page.url().includes("login") || page.url().includes("passport");
 }
 
-async function ensureValidSession(
-  email: string,
-  password: string,
-  log: (m: string) => void
-): Promise<void> {
-  // Session already confirmed valid this server lifecycle
+async function ensureValidSession(log: (m: string) => void): Promise<void> {
   if (g.__tiktokSessionValid) {
     log("Sessão ativa.");
     return;
   }
 
-  // Another job is logging in — wait and reuse its cookies
   if (g.__tiktokLoginPromise) {
     log("Aguardando login de outro vídeo...");
     await g.__tiktokLoginPromise;
     return;
   }
 
-  // Check saved cookies before opening any browser
   if (hasValidSessionCookies()) {
     log("Cookies de sessão válidos.");
     g.__tiktokSessionValid = true;
     return;
   }
 
-  // Need to login — acquire lock, open a VISIBLE Chrome tab (user may need to solve CAPTCHA)
-  log("Sessão expirada. Abrindo aba de login no Chrome...");
+  log("Sessão expirada. Abrindo navegador — escaneie o QR Code com seu celular...");
   let resolve!: () => void;
   let reject!: (e: unknown) => void;
   g.__tiktokLoginPromise = new Promise<void>((res, rej) => { resolve = res; reject = rej; });
@@ -141,7 +155,7 @@ async function ensureValidSession(
       await humanDelay(1_500, 3_000);
 
       if (onLoginPage(loginPage)) {
-        await doLogin(loginPage, email, password, log);
+        await doQRLogin(loginPage, log);
       } else {
         log("Cookies ainda válidos.");
       }
@@ -181,39 +195,25 @@ function hasValidSessionCookies(): boolean {
   }
 }
 
-// ─── Login ────────────────────────────────────────────────────────────────────
+// ─── Login via QR Code ────────────────────────────────────────────────────────
 
-async function doLogin(
-  page: Page,
-  email: string,
-  password: string,
-  log: (msg: string) => void
-): Promise<void> {
-  log("Acessando página de login...");
-  await page.goto(LOGIN_URL, { waitUntil: "networkidle2", timeout: 60_000 });
-  await humanDelay(1_200, 2_500);
+async function doQRLogin(page: Page, log: (msg: string) => void): Promise<void> {
+  log("Abrindo página de QR Code...");
+  await page.goto(QR_LOGIN_URL, { waitUntil: "networkidle2", timeout: 60_000 });
+  await humanDelay(1_000, 2_000);
 
-  await page.waitForSelector('input[name="username"]', { timeout: 20_000 });
-  await humanDelay(400, 900);
+  log("QR Code visível no navegador — escaneie com o app do TikTok no celular.");
+  log("Aguardando confirmação do login (até 3 minutos)...");
 
-  log("Digitando e-mail...");
-  await humanType(page, 'input[name="username"]', email);
-  await humanDelay(600, 1_400);
-
-  log("Digitando senha...");
-  await humanType(page, 'input[type="password"]', password);
-  await humanDelay(700, 1_500);
-
-  log("Clicando em entrar...");
-  await page.click('button[type="submit"], [data-e2e="login-button"]');
-  await humanDelay(500, 1_000);
-
-  log("Aguardando redirecionamento pós-login...");
   await page.waitForFunction(
-    () => !location.href.includes("login") && !location.href.includes("passport"),
-    { timeout: 60_000, polling: 500 }
+    () =>
+      !location.href.includes("login") &&
+      !location.href.includes("passport") &&
+      !location.href.includes("qrcode"),
+    { timeout: 180_000, polling: 1_000 }
   );
-  log("Login realizado com sucesso.");
+
+  log("Login via QR Code realizado com sucesso!");
   await humanDelay(1_000, 2_000);
 }
 
@@ -314,26 +314,177 @@ async function setSchedule(frame: Frame, isoDate: string): Promise<void> {
   }
 }
 
+// ─── Popup dismissal ─────────────────────────────────────────────────────────
+
+async function dismissPopups(page: Page, log: (m: string) => void): Promise<void> {
+  const dismissed = await page.evaluate(() => {
+    const found: string[] = [];
+    const DISMISS = ["cancel", "got it", "later", "not now", "skip", "fechar", "close"];
+
+    // Look inside modal/dialog containers first
+    const containers = Array.from(document.querySelectorAll<HTMLElement>(
+      '[role="dialog"], [class*="modal"], [class*="Modal"], [class*="overlay"], [class*="Overlay"], [class*="popup"], [class*="Popup"]'
+    ));
+
+    for (const container of containers) {
+      for (const btn of Array.from(container.querySelectorAll<HTMLButtonElement>("button"))) {
+        const txt = (btn.textContent ?? "").trim().toLowerCase();
+        if (DISMISS.includes(txt) && (btn as HTMLElement).offsetParent !== null) {
+          btn.click();
+          found.push(txt);
+        }
+      }
+      // ×  close icon buttons
+      for (const btn of Array.from(container.querySelectorAll<HTMLButtonElement>(
+        'button[aria-label*="lose"], button[aria-label*="echar"], button[class*="close"], button[class*="Close"]'
+      ))) {
+        if ((btn as HTMLElement).offsetParent !== null && !found.includes("×")) {
+          btn.click();
+          found.push("×");
+        }
+      }
+    }
+    return found;
+  });
+
+  if (dismissed.length) {
+    log(`Popups dispensados: ${dismissed.join(", ")}`);
+    await humanDelay(400, 700);
+  }
+}
+
 // ─── Submit ───────────────────────────────────────────────────────────────────
 
-async function submitPost(frame: Frame): Promise<void> {
-  const btn = await frame.waitForSelector(
-    '[data-e2e="post-button"]:not([disabled]), ' +
-    'button[class*="post-btn"]:not([disabled]), ' +
-    'button[class*="submit"]:not([disabled])',
-    { timeout: 15_000 }
-  );
-  if (!btn) throw new Error("Post button not found");
+async function findPostButton(frame: Frame) {
+  const deadline = Date.now() + 20_000;
+
+  while (Date.now() < deadline) {
+    // 1. Try known data-e2e and class selectors (without :not([disabled]) to avoid missing it)
+    for (const sel of [
+      '[data-e2e="post-button"]',
+      '[data-e2e="submit-button"]',
+      'button[class*="post-btn"]',
+      'button[class*="btn-post"]',
+      'button[class*="submit-btn"]',
+      'button[class*="publish"]',
+    ]) {
+      const el = await frame.$(sel);
+      if (el) {
+        const disabled = await el.evaluate((b) => (b as HTMLButtonElement).disabled);
+        if (!disabled) return el;
+      }
+    }
+
+    // 2. Fallback: any enabled button whose visible text matches "Post / Publicar / Postar"
+    const textBtn = await frame.evaluateHandle(() => {
+      const all = Array.from(document.querySelectorAll<HTMLButtonElement>("button"));
+      return (
+        all.find(
+          (b) =>
+            !b.disabled &&
+            /^(post|publicar|postar|publish|enviar)$/i.test((b.textContent ?? "").trim())
+        ) ?? null
+      );
+    }) as ElementHandle<HTMLButtonElement> | null;
+    if (textBtn) return textBtn;
+
+    await new Promise((r) => setTimeout(r, 1_000));
+  }
+
+  return null;
+}
+
+async function submitPost(frame: Frame, page: Page, log: (m: string) => void): Promise<void> {
+  // Dismiss any blocking popups before trying to click Post
+  await dismissPopups(page, log);
+  await humanDelay(300, 600);
+
+  const btn = await findPostButton(frame);
+  if (!btn) {
+    await screenshot(page, "error-no-post-btn", log);
+    throw new Error("Botão de publicar não encontrado na página de upload");
+  }
 
   await humanDelay(400, 800);
   await btn.click();
+  await humanDelay(1_000, 1_800);
 
-  await frame.waitForFunction(
-    () =>
-      document.querySelector('[class*="success"]') !== null ||
-      document.querySelector('[data-e2e="upload-success"]') !== null,
-    { timeout: 60_000, polling: 1_500 }
-  );
+  // Modal may appear again after clicking — dismiss it so Post can proceed
+  await dismissPopups(page, log);
+  await humanDelay(500, 1_000);
+  await screenshot(page, "04-after-click-publish", log);
+
+  // Wait for success: either redirect away from /upload, or a visible success toast.
+  // If neither happens in 45 s, dismiss popups and retry the click once.
+  const succeeded = await page.waitForFunction(
+    () => {
+      if (!location.href.includes("/upload")) return true;
+      const toasts = Array.from(document.querySelectorAll<HTMLElement>(
+        '[class*="toast"], [class*="Toast"], [class*="snack"], [class*="Snack"], [role="alert"]'
+      ));
+      return toasts.some(
+        (el) => el.offsetParent !== null && /success|sucesso|publicad|posted|scheduled|agendad/i.test(el.textContent ?? "")
+      );
+    },
+    { timeout: 45_000, polling: 2_000 }
+  ).catch(() => null);
+
+  if (!succeeded) {
+    log("Sem resposta após 45 s — tentando dispensar popups e clicar novamente...");
+    await dismissPopups(page, log);
+    await humanDelay(500, 1_000);
+    const btn2 = await findPostButton(frame);
+    if (btn2) {
+      await btn2.click();
+      log("Segundo clique em Publicar.");
+      await humanDelay(1_000, 1_800);
+      await dismissPopups(page, log);
+    }
+    await screenshot(page, "04b-retry-publish", log);
+    // Final wait with full timeout
+    await page.waitForFunction(
+      () => {
+        if (!location.href.includes("/upload")) return true;
+        const toasts = Array.from(document.querySelectorAll<HTMLElement>(
+          '[class*="toast"], [class*="Toast"], [class*="snack"], [class*="Snack"], [role="alert"]'
+        ));
+        return toasts.some(
+          (el) => el.offsetParent !== null && /success|sucesso|publicad|posted|scheduled|agendad/i.test(el.textContent ?? "")
+        );
+      },
+      { timeout: 60_000, polling: 2_000 }
+    );
+  }
+
+  await screenshot(page, "05-success", log);
+}
+
+// ─── First Comment (filled in the upload form before publishing) ──────────────
+
+async function fillFirstComment(frame: Frame, comment: string, log: (msg: string) => void): Promise<void> {
+  const selectors = [
+    '[data-e2e="comment-text-input"]',
+    '[data-e2e="first-comment-input"]',
+    '[class*="comment"] [contenteditable="true"]',
+    '[class*="first-comment"] textarea',
+    '[class*="comment-input"]',
+    'textarea[placeholder*="omment"]',
+    'textarea[placeholder*="omentário"]',
+    'textarea[placeholder*="primeiro"]',
+  ];
+
+  for (const sel of selectors) {
+    const el = await frame.$(sel);
+    if (el) {
+      await el.click();
+      await humanDelay(300, 600);
+      await el.type(comment, { delay: 40 + Math.random() * 40 });
+      log(`Primeiro comentário preenchido (seletor: ${sel}).`);
+      return;
+    }
+  }
+
+  log("Campo de primeiro comentário não encontrado no formulário — verifique o screenshot 03-before-submit.");
 }
 
 // ─── Utils ────────────────────────────────────────────────────────────────────

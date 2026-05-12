@@ -1,0 +1,16 @@
+[
+  {
+    "name": "_did",
+    "value": "web_15191910622EAEB2",
+    "domain": ".kwai.com",
+    "path": "/",
+    "expires": 1809984800,
+    "size": 24,
+    "httpOnly": false,
+    "secure": false,
+    "session": false,
+    "priority": "Medium",
+    "sourceScheme": "Secure",
+    "sameParty": false
+  }
+]
